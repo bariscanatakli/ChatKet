@@ -1,0 +1,183 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  username  String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Profile fields
+  displayName String?
+  bio         String?
+  avatarColor String?
+  status      String?  @default("Hey, I'm using ChatKet!")
+
+  // Relations
+  loginCodes       LoginCode[]
+  createdRooms     Room[]           @relation("CreatedRooms")
+  memberships      RoomMembership[]
+  messages         Message[]
+  messageDedupe    MessageDedupe[]
+  reactions        MessageReaction[]
+  
+  // DM relations
+  sentDMs          DirectMessage[]  @relation("SentDMs")
+  receivedDMs      DirectMessage[]  @relation("ReceivedDMs")
+  dmConversations1 DMConversation[] @relation("DMUser1")
+  dmConversations2 DMConversation[] @relation("DMUser2")
+
+  @@index([username])
+}
+
+model LoginCode {
+  id        String   @id @default(cuid())
+  username  String
+  codeHash  String
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  // Relations
+  user User @relation(fields: [username], references: [username])
+
+  @@index([username, expiresAt])
+}
+
+model Room {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  createdBy   User             @relation("CreatedRooms", fields: [createdById], references: [id])
+  createdById String
+  memberships RoomMembership[]
+  messages    Message[]
+  dedupe      MessageDedupe[]
+
+  @@index([createdById])
+}
+
+model RoomMembership {
+  id         String   @id @default(cuid())
+  roomId     String
+  userId     String
+  joinedAt   DateTime @default(now())
+  lastSeenAt DateTime @default(now())
+
+  // Relations
+  room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, userId])
+  @@index([roomId])
+  @@index([userId])
+}
+
+model Message {
+  id        String   @id @default(cuid())
+  roomId    String
+  userId    String
+  text      String
+  createdAt DateTime @default(now())
+
+  // Reply reference
+  replyToId String?
+  replyTo   Message?  @relation("MessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies   Message[] @relation("MessageReplies")
+
+  // Relations
+  room      Room              @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dedupe    MessageDedupe[]
+  reactions MessageReaction[]
+
+  @@index([roomId, createdAt])
+  @@index([userId])
+  @@index([replyToId])
+}
+
+model MessageReaction {
+  id        String   @id @default(cuid())
+  messageId String
+  userId    String
+  emoji     String   // e.g., "👍", "❤️", "😂"
+  createdAt DateTime @default(now())
+
+  // Relations
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId, emoji])
+  @@index([messageId])
+}
+
+model DMConversation {
+  id        String   @id @default(cuid())
+  user1Id   String
+  user2Id   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  user1    User            @relation("DMUser1", fields: [user1Id], references: [id], onDelete: Cascade)
+  user2    User            @relation("DMUser2", fields: [user2Id], references: [id], onDelete: Cascade)
+  messages DirectMessage[]
+
+  @@unique([user1Id, user2Id])
+  @@index([user1Id])
+  @@index([user2Id])
+}
+
+model DirectMessage {
+  id             String   @id @default(cuid())
+  conversationId String
+  senderId       String
+  receiverId     String
+  text           String
+  createdAt      DateTime @default(now())
+  readAt         DateTime?
+  clientMsgId    String?
+
+  // Reply reference
+  replyToId String?
+  replyTo   DirectMessage?  @relation("DMReplies", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies   DirectMessage[] @relation("DMReplies")
+
+  // Relations
+  conversation DMConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       User           @relation("SentDMs", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver     User           @relation("ReceivedDMs", fields: [receiverId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, senderId, clientMsgId])
+  @@index([conversationId, createdAt])
+  @@index([senderId])
+  @@index([receiverId])
+}
+
+model MessageDedupe {
+  id          String @id @default(cuid())
+  roomId      String
+  userId      String
+  clientMsgId String
+  messageId   String
+
+  // Relations
+  room    Room    @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, userId, clientMsgId])
+  @@index([messageId])
+}
