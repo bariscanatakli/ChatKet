@@ -1,0 +1,37 @@
+# Dependencies
+node_modules/
+
+# Build
+dist/
+client/dist/
+server/dist/
+
+# Environment (keep .env.example, ignore actual .env)
+.env
+!.env.example
+*.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Database
+*.db
+*.sqlite
+
+# Docker volumes
+postgres_data/
+
+# Prisma
+server/prisma/*.db
+server/prisma/migrations/
