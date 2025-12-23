@@ -51,97 +51,93 @@ ChatKet is an open-source real-time chat system demonstrating modern web archite
 ## System Architecture
 
 ### High-Level Architecture
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                           Client Browser                             │
-│  ┌─────────────────────────────────────────────────────────────────┐│
-│  │                      React SPA (Vite)                           ││
-│  │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────────────┐││
-│  │  │LoginForm │  │ RoomList │  │ ChatRoom │  │ Socket Service   │││
-│  │  └──────────┘  └──────────┘  └──────────┘  └──────────────────┘││
-│  └─────────────────────────────────────────────────────────────────┘│
-└──────────────────────────────┬──────────────────────────────────────┘
-                               │
-                 HTTP (/api/*) │ WebSocket (/socket.io/*)
-                               │
-┌──────────────────────────────▼──────────────────────────────────────┐
-│                         Nginx Reverse Proxy                          │
-│  ┌─────────────────────────────────────────────────────────────────┐│
-│  │ • Static file serving (React build)                             ││
-│  │ • /api/* → NestJS server:3000/                                  ││
-│  │ • /socket.io/* → NestJS server:3000/socket.io/                  ││
-│  │ • /docs/* → Swagger UI (server:3000/docs/)                      ││
-│  │ • Gzip compression, security headers, caching                   ││
-│  └─────────────────────────────────────────────────────────────────┘│
-└──────────────────────────────┬──────────────────────────────────────┘
-                               │
-┌──────────────────────────────▼──────────────────────────────────────┐
-│                         NestJS Server                                │
-│  ┌─────────────────────────────────────────────────────────────────┐│
-│  │                     Modular Architecture                         ││
-│  │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────────────┐││
-│  │  │   Auth   │  │  Rooms   │  │   Chat   │  │     Prisma       │││
-│  │  │  Module  │  │  Module  │  │  Module  │  │     Module       │││
-│  │  └──────────┘  └──────────┘  └──────────┘  └──────────────────┘││
-│  │        │             │             │               │            ││
-│  │        └─────────────┴──────┬──────┴───────────────┘            ││
-│  │                             │                                    ││
-│  │  ┌──────────────────────────▼──────────────────────────────────┐││
-│  │  │                    Prisma ORM                               │││
-│  │  └──────────────────────────┬──────────────────────────────────┘││
-│  └─────────────────────────────┼───────────────────────────────────┘│
-└────────────────────────────────┼────────────────────────────────────┘
-                                 │
-┌────────────────────────────────▼────────────────────────────────────┐
-│                         PostgreSQL 15                                │
-│  ┌─────────────────────────────────────────────────────────────────┐│
-│  │  Users │ LoginCodes │ Rooms │ RoomMemberships │ Messages │ Dedupe│
-│  └─────────────────────────────────────────────────────────────────┘│
-└─────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+  subgraph Client["Client Browser"]
+    ClientSpa["React SPA (Vite)"]
+    LoginForm["LoginForm"]
+    RoomList["RoomList"]
+    ChatRoom["ChatRoom"]
+    SocketService["Socket Service"]
+    LoginForm --> ClientSpa
+    RoomList --> ClientSpa
+    ChatRoom --> ClientSpa
+    SocketService --> ClientSpa
+  end
+
+  subgraph Nginx["Nginx Reverse Proxy"]
+    NginxProxy["Nginx"]
+    StaticFiles["Static file serving (React build)"]
+    ApiProxy["/api/* -> NestJS server:3000/"]
+    WsProxy["/socket.io/* -> NestJS server:3000/socket.io/"]
+    DocsProxy["/docs/* -> Swagger UI (server:3000/docs/)"]
+    NginxGzip["Gzip compression, security headers, caching"]
+    NginxProxy --> StaticFiles
+    NginxProxy --> ApiProxy
+    NginxProxy --> WsProxy
+    NginxProxy --> DocsProxy
+    NginxProxy --> NginxGzip
+  end
+
+  subgraph Server["NestJS Server"]
+    NestCore["NestJS Core"]
+    AuthModule["Auth Module"]
+    RoomsModule["Rooms Module"]
+    ChatModule["Chat Module"]
+    PrismaModule["Prisma Module"]
+    PrismaOrm["Prisma ORM"]
+    NestCore --> AuthModule
+    NestCore --> RoomsModule
+    NestCore --> ChatModule
+    NestCore --> PrismaModule
+    PrismaModule --> PrismaOrm
+  end
+
+  Database["PostgreSQL 15"]
+  Tables["Users, LoginCodes, Rooms, RoomMemberships, Messages, Dedupe"]
+
+  ClientSpa -->|HTTP /api/*| NginxProxy
+  ClientSpa -->|WebSocket /socket.io/*| NginxProxy
+  NginxProxy --> NestCore
+  PrismaOrm --> Database
+  Database --> Tables
 ```
 
 ### Data Flow Diagram
-```
-┌──────────┐                    ┌──────────────┐                ┌────────────┐
-│  Client  │                    │    Server    │                │  Database  │
-└────┬─────┘                    └──────┬───────┘                └─────┬──────┘
-     │                                 │                              │
-     │ 1. POST /auth/request-code     │                              │
-     │───────────────────────────────>│                              │
-     │                                 │ Find/Create User            │
-     │                                 │────────────────────────────>│
-     │                                 │<────────────────────────────│
-     │ { code: "123456" }             │ Store hashed code           │
-     │<───────────────────────────────│────────────────────────────>│
-     │                                 │                              │
-     │ 2. POST /auth/verify-code      │                              │
-     │───────────────────────────────>│ Verify code hash            │
-     │                                 │────────────────────────────>│
-     │ { accessToken, user }          │<────────────────────────────│
-     │<───────────────────────────────│                              │
-     │                                 │                              │
-     │ 3. WebSocket connect           │                              │
-     │══════════════════════════════=>│                              │
-     │   { auth: { token } }          │ Verify JWT                  │
-     │                                 │                              │
-     │ 4. rooms:sync                  │                              │
-     │───────────────────────────────>│ Verify memberships          │
-     │                                 │────────────────────────────>│
-     │ missed messages                │<────────────────────────────│
-     │<───────────────────────────────│                              │
-     │                                 │                              │
-     │ 5. message:send                │                              │
-     │───────────────────────────────>│ Rate limit check            │
-     │                                 │ Dedupe check                │
-     │                                 │────────────────────────────>│
-     │                                 │ Store message               │
-     │                                 │────────────────────────────>│
-     │ ACK { messageId }              │<────────────────────────────│
-     │<───────────────────────────────│                              │
-     │                                 │                              │
-     │ message:new (broadcast)        │                              │
-     │<═══════════════════════════════│                              │
-     │                                 │                              │
+```mermaid
+sequenceDiagram
+  participant Client
+  participant Server
+  participant DB as Database
+
+  Client->>Server: POST /auth/request-code
+  Server->>DB: Find/Create user
+  DB-->>Server: user
+  Server->>DB: Store hashed code
+  DB-->>Server: ok
+  Server-->>Client: { code: "123456" }
+
+  Client->>Server: POST /auth/verify-code
+  Server->>DB: Verify code hash
+  DB-->>Server: ok
+  Server-->>Client: { accessToken, user }
+
+  Client->>Server: WebSocket connect { auth: { token } }
+  Server->>Server: Verify JWT
+
+  Client->>Server: rooms:sync
+  Server->>DB: Verify memberships
+  DB-->>Server: missed messages
+  Server-->>Client: missed messages
+
+  Client->>Server: message:send
+  Server->>Server: Rate limit check
+  Server->>DB: Dedupe check
+  DB-->>Server: ok
+  Server->>DB: Store message
+  DB-->>Server: messageId
+  Server-->>Client: ACK { messageId }
+  Server-->>Client: message:new (broadcast)
 ```
 
 ---
@@ -252,84 +248,152 @@ ChatKet is an open-source real-time chat system demonstrating modern web archite
 
 ## Project Structure
 
-```
-beatair/
-├── architecture-notes.md          # This document
-├── docker-compose.yml             # Container orchestration
-├── .env.example                   # Environment variables template
-├── README.md                      # Quick start guide
-│
-├── server/                        # NestJS Backend
-│   ├── Dockerfile                 # Multi-stage production build
-│   ├── docker-entrypoint.sh       # DB migration runner
-│   ├── package.json
-│   ├── tsconfig.json
-│   ├── nest-cli.json
-│   │
-│   ├── prisma/
-│   │   └── schema.prisma          # Database schema
-│   │
-│   └── src/
-│       ├── main.ts                # App bootstrap + Swagger setup
-│       ├── app.module.ts          # Root module
-│       ├── app.controller.ts      # Health check endpoint
-│       │
-│       ├── auth/                  # Authentication module
-│       │   ├── auth.module.ts
-│       │   ├── auth.controller.ts # POST /auth/request-code, verify-code
-│       │   ├── auth.service.ts    # Code generation, JWT signing
-│       │   ├── dto/               # Request validation DTOs
-│       │   ├── guards/            # JWT auth guard
-│       │   └── strategies/        # Passport JWT strategy
-│       │
-│       ├── rooms/                 # Room management module
-│       │   ├── rooms.module.ts
-│       │   ├── rooms.controller.ts # CRUD room endpoints
-│       │   ├── rooms.service.ts   # Room & membership logic
-│       │   └── dto/               # Room DTOs
-│       │
-│       ├── chat/                  # Real-time chat module
-│       │   ├── chat.module.ts
-│       │   ├── chat.gateway.ts    # Socket.IO gateway (WebSocket handlers)
-│       │   ├── chat.service.ts    # Message CRUD, deduplication
-│       │   ├── messages.controller.ts # GET /rooms/:id/messages
-│       │   ├── rate-limit.service.ts  # Sliding window rate limiter
-│       │   └── presence.service.ts    # Online/offline tracking
-│       │
-│       └── prisma/                # Database module
-│           ├── prisma.module.ts
-│           └── prisma.service.ts  # Prisma client wrapper
-│
-└── client/                        # React Frontend
-    ├── Dockerfile                 # Multi-stage build with Nginx
-    ├── nginx.conf                 # Nginx reverse proxy config
-    ├── package.json
-    ├── vite.config.ts
-    ├── tailwind.config.js
-    ├── tsconfig.json
-    ├── index.html
-    │
-    └── src/
-        ├── main.tsx               # React entry point
-        ├── App.tsx                # Main app component
-        ├── index.css              # Tailwind imports
-        │
-        ├── components/
-        │   ├── index.ts           # Re-exports
-        │   ├── LoginForm.tsx      # Auth UI
-        │   ├── RoomList.tsx       # Room sidebar
-        │   └── ChatRoom.tsx       # Chat messages UI
-        │
-        ├── hooks/
-        │   ├── useAuth.ts         # Auth state management
-        │   └── useSocket.ts       # Socket.IO connection & events
-        │
-        ├── services/
-        │   ├── api.ts             # REST API client
-        │   └── socket.ts          # Socket.IO service
-        │
-        └── types/
-            └── index.ts           # TypeScript interfaces
+```mermaid
+flowchart TB
+  Root["beatair/"]
+  ANotes["architecture-notes.md (This document)"]
+  DockerCompose["docker-compose.yml (Container orchestration)"]
+  EnvExample[".env.example (Environment variables template)"]
+  Readme["README.md (Quick start guide)"]
+
+  Root --> ANotes
+  Root --> DockerCompose
+  Root --> EnvExample
+  Root --> Readme
+
+  ServerDir["server/ (NestJS Backend)"]
+  ClientDir["client/ (React Frontend)"]
+  Root --> ServerDir
+  Root --> ClientDir
+
+  ServerDockerfile["Dockerfile (Multi-stage production build)"]
+  ServerEntrypoint["docker-entrypoint.sh (DB migration runner)"]
+  ServerPackage["package.json"]
+  ServerTsconfig["tsconfig.json"]
+  NestCli["nest-cli.json"]
+  ServerDir --> ServerDockerfile
+  ServerDir --> ServerEntrypoint
+  ServerDir --> ServerPackage
+  ServerDir --> ServerTsconfig
+  ServerDir --> NestCli
+
+  PrismaDir["prisma/"]
+  PrismaSchema["schema.prisma (Database schema)"]
+  ServerDir --> PrismaDir
+  PrismaDir --> PrismaSchema
+
+  ServerSrc["src/"]
+  ServerDir --> ServerSrc
+  ServerMain["main.ts (App bootstrap + Swagger setup)"]
+  AppModule["app.module.ts (Root module)"]
+  AppController["app.controller.ts (Health check endpoint)"]
+  ServerSrc --> ServerMain
+  ServerSrc --> AppModule
+  ServerSrc --> AppController
+
+  AuthDir["auth/ (Authentication module)"]
+  RoomsDir["rooms/ (Room management module)"]
+  ChatDir["chat/ (Real-time chat module)"]
+  PrismaModuleDir["prisma/ (Database module)"]
+  ServerSrc --> AuthDir
+  ServerSrc --> RoomsDir
+  ServerSrc --> ChatDir
+  ServerSrc --> PrismaModuleDir
+
+  AuthModuleFile["auth.module.ts"]
+  AuthControllerFile["auth.controller.ts (POST /auth/request-code, verify-code)"]
+  AuthServiceFile["auth.service.ts (Code generation, JWT signing)"]
+  AuthDtoDir["dto/ (Request validation DTOs)"]
+  AuthGuardsDir["guards/ (JWT auth guard)"]
+  AuthStrategiesDir["strategies/ (Passport JWT strategy)"]
+  AuthDir --> AuthModuleFile
+  AuthDir --> AuthControllerFile
+  AuthDir --> AuthServiceFile
+  AuthDir --> AuthDtoDir
+  AuthDir --> AuthGuardsDir
+  AuthDir --> AuthStrategiesDir
+
+  RoomsModuleFile["rooms.module.ts"]
+  RoomsControllerFile["rooms.controller.ts (CRUD room endpoints)"]
+  RoomsServiceFile["rooms.service.ts (Room and membership logic)"]
+  RoomsDtoDir["dto/ (Room DTOs)"]
+  RoomsDir --> RoomsModuleFile
+  RoomsDir --> RoomsControllerFile
+  RoomsDir --> RoomsServiceFile
+  RoomsDir --> RoomsDtoDir
+
+  ChatModuleFile["chat.module.ts"]
+  ChatGatewayFile["chat.gateway.ts (Socket.IO gateway)"]
+  ChatServiceFile["chat.service.ts (Message CRUD, deduplication)"]
+  MessagesControllerFile["messages.controller.ts (GET /rooms/:id/messages)"]
+  RateLimitFile["rate-limit.service.ts (Sliding window rate limiter)"]
+  PresenceFile["presence.service.ts (Online/offline tracking)"]
+  ChatDir --> ChatModuleFile
+  ChatDir --> ChatGatewayFile
+  ChatDir --> ChatServiceFile
+  ChatDir --> MessagesControllerFile
+  ChatDir --> RateLimitFile
+  ChatDir --> PresenceFile
+
+  PrismaModuleFile["prisma.module.ts"]
+  PrismaServiceFile["prisma.service.ts (Prisma client wrapper)"]
+  PrismaModuleDir --> PrismaModuleFile
+  PrismaModuleDir --> PrismaServiceFile
+
+  ClientDockerfile["Dockerfile (Multi-stage build with Nginx)"]
+  NginxConf["nginx.conf (Nginx reverse proxy config)"]
+  ClientPackage["package.json"]
+  ViteConfig["vite.config.ts"]
+  TailwindConfig["tailwind.config.js"]
+  ClientTsconfig["tsconfig.json"]
+  IndexHtml["index.html"]
+  ClientDir --> ClientDockerfile
+  ClientDir --> NginxConf
+  ClientDir --> ClientPackage
+  ClientDir --> ViteConfig
+  ClientDir --> TailwindConfig
+  ClientDir --> ClientTsconfig
+  ClientDir --> IndexHtml
+
+  ClientSrc["src/"]
+  ClientDir --> ClientSrc
+  ClientMain["main.tsx (React entry point)"]
+  AppTsx["App.tsx (Main app component)"]
+  IndexCss["index.css (Tailwind imports)"]
+  ClientSrc --> ClientMain
+  ClientSrc --> AppTsx
+  ClientSrc --> IndexCss
+
+  ComponentsDir["components/"]
+  HooksDir["hooks/"]
+  ServicesDir["services/"]
+  TypesDir["types/"]
+  ClientSrc --> ComponentsDir
+  ClientSrc --> HooksDir
+  ClientSrc --> ServicesDir
+  ClientSrc --> TypesDir
+
+  ComponentsIndex["index.ts (Re-exports)"]
+  LoginFormComp["LoginForm.tsx (Auth UI)"]
+  RoomListComp["RoomList.tsx (Room sidebar)"]
+  ChatRoomComp["ChatRoom.tsx (Chat messages UI)"]
+  ComponentsDir --> ComponentsIndex
+  ComponentsDir --> LoginFormComp
+  ComponentsDir --> RoomListComp
+  ComponentsDir --> ChatRoomComp
+
+  UseAuth["useAuth.ts (Auth state management)"]
+  UseSocket["useSocket.ts (Socket.IO connection and events)"]
+  HooksDir --> UseAuth
+  HooksDir --> UseSocket
+
+  ApiClient["api.ts (REST API client)"]
+  SocketClient["socket.ts (Socket.IO service)"]
+  ServicesDir --> ApiClient
+  ServicesDir --> SocketClient
+
+  TypesIndex["index.ts (TypeScript interfaces)"]
+  TypesDir --> TypesIndex
 ```
 
 ---
@@ -337,61 +401,36 @@ beatair/
 ## Authentication Architecture
 
 ### Flow Diagram
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                    Authentication Flow                               │
-└─────────────────────────────────────────────────────────────────────┘
+```mermaid
+sequenceDiagram
+  participant Client
+  participant Server
+  participant DB as Database
 
-  Client                              Server                    Database
-    │                                    │                          │
-    │  POST /auth/request-code           │                          │
-    │  { username: "alice" }             │                          │
-    │───────────────────────────────────>│                          │
-    │                                    │  Find user by username   │
-    │                                    │─────────────────────────>│
-    │                                    │<─────────────────────────│
-    │                                    │                          │
-    │                                    │  If not exists, create   │
-    │                                    │─────────────────────────>│
-    │                                    │<─────────────────────────│
-    │                                    │                          │
-    │                                    │  Generate 6-digit code   │
-    │                                    │  Hash with bcrypt        │
-    │                                    │  Store with 10min expiry │
-    │                                    │─────────────────────────>│
-    │                                    │<─────────────────────────│
-    │                                    │                          │
-    │  { message, code: "123456" }       │  (Code in response for   │
-    │<───────────────────────────────────│   demo purposes)         │
-    │                                    │                          │
-    │                                    │                          │
-    │  POST /auth/verify-code            │                          │
-    │  { username: "alice",              │                          │
-    │    code: "123456" }                │                          │
-    │───────────────────────────────────>│                          │
-    │                                    │  Find valid codes        │
-    │                                    │─────────────────────────>│
-    │                                    │<─────────────────────────│
-    │                                    │                          │
-    │                                    │  bcrypt.compare()        │
-    │                                    │  Mark code as used       │
-    │                                    │─────────────────────────>│
-    │                                    │                          │
-    │                                    │  Sign JWT token          │
-    │                                    │  { sub, username, exp }  │
-    │                                    │                          │
-    │  { accessToken, user }             │                          │
-    │<───────────────────────────────────│                          │
-    │                                    │                          │
-    │                                    │                          │
-    │  WebSocket handshake               │                          │
-    │  { auth: { token: JWT } }          │                          │
-    │═══════════════════════════════════>│                          │
-    │                                    │  Verify JWT              │
-    │                                    │  Attach user to socket   │
-    │                                    │                          │
-    │  Connection established            │                          │
-    │<═══════════════════════════════════│                          │
+  Client->>Server: POST /auth/request-code { username: "alice" }
+  Server->>DB: Find user by username
+  DB-->>Server: user or none
+  alt User not found
+    Server->>DB: Create user
+    DB-->>Server: created
+  end
+  Server->>Server: Generate 6-digit code, hash, set expiry
+  Server->>DB: Store code hash (10 min)
+  DB-->>Server: ok
+  Server-->>Client: { message, code: "123456" } (demo)
+
+  Client->>Server: POST /auth/verify-code { username: "alice", code: "123456" }
+  Server->>DB: Find valid codes
+  DB-->>Server: codes
+  Server->>Server: bcrypt.compare and mark used
+  Server->>DB: Mark code as used
+  DB-->>Server: ok
+  Server->>Server: Sign JWT { sub, username, exp }
+  Server-->>Client: { accessToken, user }
+
+  Client->>Server: WebSocket handshake { auth: { token: JWT } }
+  Server->>Server: Verify JWT, attach user to socket
+  Server-->>Client: Connection established
 ```
 
 ### JWT Payload Structure
@@ -417,44 +456,44 @@ beatair/
 ## Real-time Messaging Architecture
 
 ### Message Lifecycle
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                    Message Send Flow                                 │
-└─────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+  subgraph Client["Client"]
+    C1["1. User types message, clicks Send"]
+    C2["2. Generate UUID (clientMsgId) - key for idempotency"]
+    C3["3. Show message with 'sending...' status"]
+    C4["4. Emit message:send with ACK callback"]
+    C5["5. Receive ACK, update status to delivered"]
+    C6["6. Receive message:new event"]
+    C7["7. Deduplicate by messageId (prevents showing twice)"]
+    C1 --> C2 --> C3 --> C4
+  end
 
-1. User types message, clicks Send
-2. Client generates UUID (clientMsgId) ←── Key for idempotency
-3. Client shows message with "sending..." status
-4. Client emits 'message:send' with ACK callback
-          │
-          ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│ Server receives message:send                                         │
-│                                                                      │
-│  1. Validate user authenticated (socket.data.user)                  │
-│  2. Verify room membership (roomsService.isMember)                  │
-│  3. Check rate limit (rateLimitService.checkAndRecord)              │
-│     - If muted → return error with mutedUntil                       │
-│     - If limit exceeded → apply 30s mute, return error              │
-│  4. Check dedupe table for clientMsgId                              │
-│     - If exists → return existing messageId (idempotent)            │
-│  5. Create message + dedupe record in transaction                   │
-│  6. Broadcast 'message:new' to all room members                     │
-│  7. Return ACK with messageId to sender                             │
-└─────────────────────────────────────────────────────────────────────┘
-          │
-          ▼
-5. Client receives ACK, updates message status to "delivered"
-6. All room members receive 'message:new' event
-7. Client deduplicates by messageId (prevents showing twice)
+  subgraph Server["Server"]
+    S1["Validate user authenticated (socket.data.user)"]
+    S2["Verify room membership (roomsService.isMember)"]
+    S3["Check rate limit (rateLimitService.checkAndRecord)"]
+    S4["Check dedupe table for clientMsgId"]
+    S5["Create message + dedupe record in transaction"]
+    S6["Broadcast message:new to all room members"]
+    S7["Return ACK with messageId to sender"]
+    S1 --> S2 --> S3 --> S4 --> S5 --> S6 --> S7
+  end
+
+  C4 --> S1
+  S7 --> C5
+  S6 --> C6 --> C7
 ```
 
 ### Why clientMsgId?
 
 **Problem**: Network unreliability causes duplicate messages
-```
-Client sends message → Network drops → Client reconnects → Client retries
-Without deduplication: Message appears twice in chat
+```mermaid
+flowchart LR
+  A["Client sends message"] --> B["Network drops"]
+  B --> C["Client reconnects"]
+  C --> D["Client retries"]
+  D --> E["Without deduplication: message appears twice"]
 ```
 
 **Solution**: Client-generated unique ID
@@ -512,46 +551,60 @@ interface MessageAck {
 ## Data Model
 
 ### Entity Relationship Diagram
-```
-┌──────────────────────┐         ┌──────────────────────┐
-│        User          │         │      LoginCode       │
-├──────────────────────┤         ├──────────────────────┤
-│ id         (PK) cuid │───┐     │ id         (PK) cuid │
-│ username   (UQ) str  │   │     │ username   (FK) str  │───┐
-│ createdAt       time │   │     │ codeHash        str  │   │
-│ updatedAt       time │   │     │ expiresAt       time │   │
-└──────────────────────┘   │     │ used            bool │   │
-         │                 │     │ createdAt       time │   │
-         │                 │     └──────────────────────┘   │
-         │                 └────────────────────────────────┘
-         │
-         │ 1:N (createdRooms)
-         │ 1:N (memberships)
-         │ 1:N (messages)
-         ▼
-┌──────────────────────┐         ┌──────────────────────┐
-│        Room          │◄────────│   RoomMembership     │
-├──────────────────────┤   N:1   ├──────────────────────┤
-│ id         (PK) cuid │         │ id         (PK) cuid │
-│ name            str  │         │ roomId     (FK) str  │
-│ createdById (FK) str │         │ userId     (FK) str  │
-│ createdAt       time │         │ joinedAt        time │
-│ updatedAt       time │         │ lastSeenAt      time │
-└──────────────────────┘         └──────────────────────┘
-         │                        @@unique([roomId, userId])
-         │
-         │ 1:N
-         ▼
-┌──────────────────────┐         ┌──────────────────────┐
-│       Message        │◄────────│    MessageDedupe     │
-├──────────────────────┤   1:1   ├──────────────────────┤
-│ id         (PK) cuid │         │ id         (PK) cuid │
-│ roomId     (FK) str  │         │ roomId     (FK) str  │
-│ userId     (FK) str  │         │ userId     (FK) str  │
-│ text            str  │         │ clientMsgId     str  │
-│ createdAt       time │         │ messageId  (FK) str  │
-└──────────────────────┘         └──────────────────────┘
-  @@index([roomId, createdAt])    @@unique([roomId, userId, clientMsgId])
+```mermaid
+erDiagram
+  USER {
+    string id PK
+    string username "UQ"
+    datetime createdAt
+    datetime updatedAt
+  }
+  LOGIN_CODE {
+    string id PK
+    string username FK
+    string codeHash
+    datetime expiresAt
+    boolean used
+    datetime createdAt
+  }
+  ROOM {
+    string id PK
+    string name
+    string createdById FK
+    datetime createdAt
+    datetime updatedAt
+  }
+  ROOM_MEMBERSHIP {
+    string id PK
+    string roomId FK
+    string userId FK
+    datetime joinedAt
+    datetime lastSeenAt
+  }
+  MESSAGE {
+    string id PK
+    string roomId FK
+    string userId FK
+    string text
+    datetime createdAt
+  }
+  MESSAGE_DEDUPE {
+    string id PK
+    string roomId FK
+    string userId FK
+    string clientMsgId
+    string messageId FK
+  }
+
+  USER ||--o{ LOGIN_CODE : "auth codes"
+  USER ||--o{ ROOM : "createdRooms"
+  USER ||--o{ ROOM_MEMBERSHIP : "memberships"
+  USER ||--o{ MESSAGE : "messages"
+  ROOM ||--o{ ROOM_MEMBERSHIP : "memberships"
+  ROOM ||--o{ MESSAGE : "messages"
+  MESSAGE ||--|| MESSAGE_DEDUPE : "dedupe"
+  USER ||--o{ MESSAGE_DEDUPE : "dedupe"
+  ROOM ||--o{ MESSAGE_DEDUPE : "dedupe"
 ```
 
 ### Database Indexes
@@ -576,11 +629,15 @@ interface MessageAck {
 
 **Algorithm**: Sliding Window Counter
 
-```
-Configuration:
-- Window: 10 seconds
-- Limit: 5 messages per user per room
-- Violation penalty: 30-second mute
+```mermaid
+flowchart TB
+  Config["Rate Limiting Configuration"]
+  Window["Window: 10 seconds"]
+  Limit["Limit: 5 messages per user per room"]
+  Penalty["Violation penalty: 30-second mute"]
+  Config --> Window
+  Config --> Limit
+  Config --> Penalty
 ```
 
 **Implementation**:
@@ -646,11 +703,13 @@ socket.emit('room:system', {
 **States**: `online` | `offline`
 
 **Mechanism**:
-```
-1. Client connected      → online
-2. Client sends ping     → refresh lastPing timestamp
-3. No ping for 30 sec    → offline (detected by periodic check)
-4. Socket disconnects    → immediate offline
+```mermaid
+flowchart TB
+  Step1["1. Client connected -> online"]
+  Step2["2. Client sends ping -> refresh lastPing timestamp"]
+  Step3["3. No ping for 30 sec -> offline (periodic check)"]
+  Step4["4. Socket disconnects -> immediate offline"]
+  Step1 --> Step2 --> Step3 --> Step4
 ```
 
 **Data Structure**:
@@ -670,15 +729,14 @@ socketToUser: Map<socketId, userId>
 ```
 
 **Heartbeat Flow**:
-```
-Client (every 15 sec)                Server
-    │                                   │
-    │  presence:ping { roomId }         │
-    │──────────────────────────────────>│
-    │                                   │ Update lastPing
-    │                                   │ Check if room changed
-    │  { success: true }                │
-    │<──────────────────────────────────│
+```mermaid
+sequenceDiagram
+  participant Client
+  participant Server
+  Client->>Server: presence:ping { roomId } (every 15 sec)
+  Server->>Server: Update lastPing
+  Server->>Server: Check if room changed
+  Server-->>Client: { success: true }
 ```
 
 ---
@@ -686,40 +744,21 @@ Client (every 15 sec)                Server
 ## Reconnection & Recovery
 
 ### Client-Side Flow
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                   Reconnection Recovery                              │
-└─────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+  A["1. Socket.IO detects disconnect"]
+  B["2. Automatic reconnection (exponential backoff)"]
+  B1["reconnectionDelay: 1000ms<br/>reconnectionDelayMax: 5000ms<br/>maxReconnectAttempts: 10"]
+  C["3. On connect event"]
+  D["4. Client emits rooms:sync with last known state"]
+  Payload["rooms: [ { roomId: abc, lastSeenAt: ... }, { roomId: def, lastSeenAt: ... } ]"]
+  E["5. Server processes each room:<br/>Verify membership<br/>Join socket to room<br/>Fetch messages since lastSeenAt (max 100)<br/>Emit missed messages<br/>Emit current roster"]
+  F["6. Client merges messages (dedupe by messageId)"]
+  G["7. UI updates with recovered state"]
 
-1. Socket.IO detects disconnect
-   │
-2. Automatic reconnection (built-in exponential backoff)
-   │ - reconnectionDelay: 1000ms
-   │ - reconnectionDelayMax: 5000ms
-   │ - maxReconnectAttempts: 10
-   │
-3. On 'connect' event:
-   │
-4. Client emits 'rooms:sync' with last known state
-   │ ┌────────────────────────────────────────────┐
-   │ │ {                                          │
-   │ │   rooms: [                                 │
-   │ │     { roomId: "abc", lastSeenAt: "..." },  │
-   │ │     { roomId: "def", lastSeenAt: "..." }   │
-   │ │   ]                                        │
-   │ │ }                                          │
-   │ └────────────────────────────────────────────┘
-   │
-5. Server processes each room:
-   │ - Verify membership
-   │ - Join socket to room
-   │ - Fetch messages since lastSeenAt (max 100)
-   │ - Emit missed messages
-   │ - Emit current roster
-   │
-6. Client merges messages (dedupe by messageId)
-   │
-7. UI updates with recovered state
+  A --> B --> C --> D --> E --> F --> G
+  B --> B1
+  D --> Payload
 ```
 
 ### localStorage Persistence
@@ -994,30 +1033,17 @@ networks:
 ```
 
 ### Container Architecture
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                      Docker Network: beatair-network                │
-│                                                                      │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────┐ │
-│  │    postgres     │  │     server      │  │       client        │ │
-│  │  (PostgreSQL)   │  │    (NestJS)     │  │  (Nginx + React)    │ │
-│  │                 │  │                 │  │                     │ │
-│  │  Port: 5432     │  │  Port: 3000     │  │  Port: 80 (exposed) │ │
-│  │  (internal)     │  │  (internal)     │  │                     │ │
-│  │                 │  │                 │  │  Routes:            │ │
-│  │  Volume:        │  │  Entrypoint:    │  │  /api/* → server    │ │
-│  │  postgres_data  │  │  - Run prisma   │  │  /socket.io/*       │ │
-│  │                 │  │    migrate      │  │    → server         │ │
-│  │                 │  │  - Start server │  │  /docs/* → server   │ │
-│  │                 │  │                 │  │  /* → static files  │ │
-│  └────────┬────────┘  └────────┬────────┘  └──────────┬──────────┘ │
-│           │                    │                      │            │
-│           │    DATABASE_URL    │      proxy_pass      │            │
-│           └────────────────────┼──────────────────────┘            │
-│                                │                                    │
-└────────────────────────────────┼────────────────────────────────────┘
-                                 │
-                            Port 80 ──────► Internet
+```mermaid
+flowchart TB
+  subgraph Net["Docker Network: beatair-network"]
+    Postgres["postgres (PostgreSQL)<br/>Port: 5432 (internal)<br/>Volume: postgres_data"]
+    Server["server (NestJS)<br/>Port: 3000 (internal)<br/>Entrypoint: prisma migrate, start server"]
+    Client["client (Nginx + React)<br/>Port: 80 (exposed)<br/>Routes:<br/>/api/* -> server<br/>/socket.io/* -> server<br/>/docs/* -> server<br/>/* -> static files"]
+    Postgres <-->|DATABASE_URL| Server
+    Client -->|proxy_pass| Server
+  end
+  Internet["Internet"]
+  Client -->|Port 80| Internet
 ```
 
 ### Nginx Configuration Highlights
@@ -1170,46 +1196,36 @@ curl "http://localhost/api/rooms/{roomId}/messages?limit=50&before={messageId}" 
 ## Scalability Path
 
 ### Current State (Single Instance)
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        Single Server                                 │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────┐ │
-│  │   Rate Limit    │  │    Presence     │  │     Socket.IO       │ │
-│  │   (in-memory)   │  │   (in-memory)   │  │      Server         │ │
-│  └─────────────────┘  └─────────────────┘  └─────────────────────┘ │
-└───────────────────────────────┬─────────────────────────────────────┘
-                                │
-                                ▼
-                      ┌─────────────────┐
-                      │   PostgreSQL    │
-                      └─────────────────┘
+```mermaid
+flowchart TB
+  subgraph Single["Single Server"]
+    Rate["Rate Limit (in-memory)"]
+    Presence["Presence (in-memory)"]
+    Socket["Socket.IO Server"]
+  end
+  DB["PostgreSQL"]
+  Socket --> DB
 ```
 
 ### Horizontal Scaling (Future with Redis)
-```
-                         ┌─────────────────┐
-                         │  Load Balancer  │
-                         │  (sticky/hash)  │
-                         └────────┬────────┘
-                                  │
-           ┌──────────────────────┼──────────────────────┐
-           │                      │                      │
-           ▼                      ▼                      ▼
-     ┌──────────┐           ┌──────────┐           ┌──────────┐
-     │ Server 1 │           │ Server 2 │           │ Server 3 │
-     └────┬─────┘           └────┬─────┘           └────┬─────┘
-          │                      │                      │
-          └──────────────────────┼──────────────────────┘
-                                 │
-              ┌──────────────────┴──────────────────┐
-              │                                     │
-              ▼                                     ▼
-       ┌─────────────┐                     ┌─────────────────┐
-       │    Redis    │                     │   PostgreSQL    │
-       │  (pub/sub,  │                     │                 │
-       │  rate limit,│                     │                 │
-       │  presence)  │                     │                 │
-       └─────────────┘                     └─────────────────┘
+```mermaid
+flowchart TB
+  LB["Load Balancer (sticky/hash)"]
+  S1["Server 1"]
+  S2["Server 2"]
+  S3["Server 3"]
+  Redis["Redis (pub/sub, rate limit, presence)"]
+  DB["PostgreSQL"]
+
+  LB --> S1
+  LB --> S2
+  LB --> S3
+  S1 --> Redis
+  S2 --> Redis
+  S3 --> Redis
+  S1 --> DB
+  S2 --> DB
+  S3 --> DB
 ```
 
 ### Redis Migration Points

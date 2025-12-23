@@ -190,26 +190,26 @@ Interactive API documentation is available via Swagger:
 
 ## 🏗️ Architecture
 
-```
-┌───────────────────────────────────────────────────────────┐
-│                     Nginx (Port 8080)                     │
-│  ┌─────────────────────────────────────────────────────┐  │
-│  │  /            → React SPA (Static Files)            │  │
-│  │  /api/*       → NestJS REST API                     │  │
-│  │  /socket.io/* → Socket.IO WebSocket                 │  │
-│  └─────────────────────────────────────────────────────┘  │
-│                            │                              │
-│  ┌─────────────────────────┴────────────────────────────┐ │
-│  │  NestJS Server                                       │ │
-│  │  ├── REST API + Swagger                             │ │
-│  │  ├── Socket.IO Gateway                              │ │
-│  │  └── Prisma ORM                                     │ │
-│  └─────────────────────────┬────────────────────────────┘ │
-│                            │                              │
-│  ┌─────────────────────────┴────────────────────────────┐ │
-│  │  PostgreSQL Database                                 │ │
-│  └──────────────────────────────────────────────────────┘ │
-└───────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+  subgraph Nginx["Nginx (Port 8080)"]
+    SPA["/ -> React SPA (Static Files)"]
+    API["/api/* -> NestJS REST API"]
+    WS["/socket.io/* -> Socket.IO WebSocket"]
+  end
+
+  Server["NestJS Server"]
+  REST["REST API + Swagger"]
+  Gateway["Socket.IO Gateway"]
+  ORM["Prisma ORM"]
+  DB["PostgreSQL Database"]
+
+  Nginx --> Server
+  Server --> DB
+
+  Server --> REST
+  Server --> Gateway
+  Server --> ORM
 ```
 
 ## 🤝 Contributing
@@ -247,6 +247,6 @@ Want to understand how ChatKet works under the hood? Check out the detailed arch
 Made with ❤️ by [Barış Can Ataklı](https://github.com/bariscanatakli)
 
 [![GitHub](https://img.shields.io/badge/GitHub-bariscanatakli-181717?style=flat-square&logo=github)](https://github.com/bariscanatakli)
-[![LinkedIn](https://img.shields.io/badge/LinkedIn-bariscanatakli-0A66C2?style=flat-square&logo=linkedin)](https://linkedin.com/in/bariscanatakli)
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-bariscanatakli-0A66C2?style=flat-square&logo=linkedin)](https://www.linkedin.com/in/bar%C4%B1%C5%9F-can-atakl%C4%B1-414184203/)
 
 </div>
