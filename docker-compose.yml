@@ -17,6 +17,12 @@ services:
     networks:
       - chatket-network
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
 
   # NestJS Backend Server
   server:
@@ -28,6 +34,7 @@ services:
       NODE_ENV: production
       DATABASE_URL: postgresql://${POSTGRES_USER:-chatket}:${POSTGRES_PASSWORD:-chatket_secret}@postgres:5432/${POSTGRES_DB:-chatket}?schema=public
       JWT_SECRET: ${JWT_SECRET:-chatket_jwt_secret_change_in_production}
+      NODE_OPTIONS: "--max-old-space-size=256"
     depends_on:
       postgres:
         condition: service_healthy
@@ -40,6 +47,12 @@ services:
     networks:
       - chatket-network
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+        reservations:
+          memory: 192M
 
   # React Frontend with Nginx
   client:
@@ -55,6 +68,12 @@ services:
     networks:
       - chatket-network
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+        reservations:
+          memory: 32M
 
 volumes:
   postgres_data:
