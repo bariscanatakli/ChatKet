@@ -58,8 +58,8 @@ A modern, open-source real-time chat application with rooms, direct messages, an
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/chatket.git
-cd chatket
+git clone https://github.com/bariscanatakli/ChatKet.git
+cd ChatKet
 
 # Start all services
 docker compose up -d --build
