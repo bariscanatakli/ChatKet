@@ -10,7 +10,7 @@
 
 A modern, open-source real-time chat application with rooms, direct messages, and rich features.
 
-[Demo](#quick-start) · [Documentation](#features) · [Contributing](#contributing)
+[🚀 Live Demo](https://chatket.bariscanatakli.com) · [📖 Documentation](./architecture-notes.md) · [🤝 Contributing](#contributing)
 
 </div>
 
@@ -234,8 +234,19 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [Tailwind CSS](https://tailwindcss.com/) - A utility-first CSS framework
 - [Prisma](https://prisma.io/) - Next-generation ORM
 
+## 📐 Architecture & Design
+
+Want to understand how ChatKet works under the hood? Check out the detailed architecture documentation:
+
+📖 **[Architecture Notes](./architecture-notes.md)** - Deep dive into system design, data models, WebSocket events, and scalability considerations.
+
 ---
 
 <div align="center">
-Made with ❤️ for open source
+
+Made with ❤️ by [Barış Can Ataklı](https://github.com/bariscanatakli)
+
+[![GitHub](https://img.shields.io/badge/GitHub-bariscanatakli-181717?style=flat-square&logo=github)](https://github.com/bariscanatakli)
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-bariscanatakli-0A66C2?style=flat-square&logo=linkedin)](https://linkedin.com/in/bariscanatakli)
+
 </div>
